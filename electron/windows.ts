@@ -301,9 +301,11 @@ function setHudOverlayMousePassthrough(ignore: boolean) {
 	}
 
 	if (!isHudOverlayMousePassthroughSupported()) {
-		if (process.platform !== "linux") {
-			setHudOverlayFallbackExpanded(!ignore);
-		}
+		// Grow the compact bar into the taller fallback window whenever a control is
+		// interactive (e.g. a popover opens), otherwise popovers (camera, delay, mic,
+		// settings) render outside the small window and get clipped. This now runs on
+		// Linux too — only the window position is ignored on Wayland, not the size.
+		setHudOverlayFallbackExpanded(!ignore);
 		hudOverlayWindow.setIgnoreMouseEvents(false);
 		return;
 	}
