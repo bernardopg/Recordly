@@ -123,14 +123,8 @@ function getWindowsBuildNumber(): number | null {
 }
 
 export function isHudOverlayMousePassthroughSupported(): boolean {
-	// On Linux (X11 and Wayland), Electron's setIgnoreMouseEvents(true, { forward: true })
-	// is supported and is required for the HUD to behave correctly. The HUD is a
-	// transparent, always-on-top overlay; without mouse pass-through every transparent
-	// pixel captures the cursor, which on Wayland compositors with focus-follows-mouse
-	// (e.g. Hyprland) makes the control bar flicker/disappear on hover and blocks clicks
-	// on the windows underneath it. See #638, #657, #687.
 	if (process.platform === "linux") {
-		return true;
+		return false;
 	}
 
 	const build = getWindowsBuildNumber();
@@ -196,18 +190,9 @@ function getHudOverlayDisplay() {
 
 function getHudOverlayBounds() {
 	const { workArea } = getHudOverlayDisplay();
-	// On platforms with mouse pass-through the HUD spans the whole work area and stays
-	// click-through except over the interactive controls. On Linux/Wayland the compositor
-	// ignores programmatic window placement (BrowserWindow.setBounds x/y is silently
-	// dropped), so a window that shrinks to a compact bar while recording cannot move
-	// itself back to the bottom-centre and ends up stranded (e.g. top-left on Hyprland).
-	// Keep the full-work-area, click-through window while recording on Linux so the bar
-	// stays put; other platforms keep the compact recording bar they can reposition.
-	const keepFullBoundsWhileRecording = process.platform === "linux";
 	return getHudOverlayWindowBounds(
 		workArea,
-		isHudOverlayMousePassthroughSupported() &&
-			(keepFullBoundsWhileRecording || !hudOverlayRecordingActive),
+		isHudOverlayMousePassthroughSupported() && !hudOverlayRecordingActive,
 		hudOverlayFallbackExpanded,
 	);
 }
@@ -292,15 +277,10 @@ function setHudOverlayFallbackExpanded(expanded: boolean) {
 }
 
 function setHudOverlayMousePassthrough(ignore: boolean) {
-	// While recording, non-Linux platforms shrink the HUD to a compact bar that always
-	// captures the mouse. On Linux the window stays full-work-area and click-through, so
-	// the renderer-driven `ignore` value is honoured (see getHudOverlayBounds / the
-	// recording branch below).
-	const recordingForcesCapture = hudOverlayRecordingActive && process.platform !== "linux";
 	hudOverlayIgnoringMouse =
 		hudOverlaySourceSelectionActive && !hudOverlayRecordingActive
 			? true
-			: recordingForcesCapture
+			: hudOverlayRecordingActive
 				? false
 				: ignore;
 
@@ -316,19 +296,7 @@ function setHudOverlayMousePassthrough(ignore: boolean) {
 	if (hudOverlayRecordingActive) {
 		hudOverlayFallbackExpanded = false;
 		applyHudOverlayBounds();
-		if (process.platform === "linux" && isHudOverlayMousePassthroughSupported()) {
-			// Linux keeps the full-work-area, always-on-top window while recording.
-			// Honour the renderer-driven pass-through so the controls stay clickable
-			// while clicks fall through everywhere else (the compositor cannot move a
-			// shrunken bar back into place, so we never shrink it here).
-			if (ignore) {
-				hudOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
-			} else {
-				hudOverlayWindow.setIgnoreMouseEvents(false);
-			}
-		} else {
-			hudOverlayWindow.setIgnoreMouseEvents(false);
-		}
+		hudOverlayWindow.setIgnoreMouseEvents(false);
 		return;
 	}
 
@@ -480,7 +448,12 @@ export function createHudOverlayWindow(): BrowserWindow {
 		skipTaskbar: true,
 		hasShadow: false,
 		show: false,
-		focusable: false,
+		// On Linux/Wayland (e.g. Hyprland) a non-focusable, always-on-top overlay makes
+		// focus-follows-mouse compositors thrash focus when the cursor enters it, so the
+		// control bar flickers/disappears on hover. Since the HUD is a compact bar window
+		// here (mouse pass-through is unsupported on Linux), let it be a normal focusable
+		// window so the compositor focuses it cleanly. Windows/macOS keep it non-focusable.
+		focusable: process.platform === "linux",
 		webPreferences: {
 			preload: path.join(electronWindowsDir, "preload.mjs"),
 			nodeIntegration: false,
@@ -670,15 +643,7 @@ export function setHudOverlayRecordingActive(recording: boolean): void {
 	hudOverlayRecordingActive = Boolean(recording);
 	hudOverlayFallbackExpanded = false;
 	applyHudOverlayBounds();
-	// On Linux the recording HUD keeps the full work area and stays click-through, so it
-	// must start in pass-through (otherwise the full-screen window would capture every
-	// click and block the content being recorded). The renderer's hover logic re-asserts
-	// capture over the controls. Other platforms shrink to a compact, always-capturing bar.
-	const startIgnoringMouse =
-		process.platform === "linux" && isHudOverlayMousePassthroughSupported()
-			? true
-			: !hudOverlayRecordingActive;
-	setHudOverlayMousePassthrough(startIgnoringMouse);
+	setHudOverlayMousePassthrough(!hudOverlayRecordingActive);
 }
 
 export function createUpdateToastWindow(): BrowserWindow {
@@ -907,9 +872,8 @@ export function createEditorWindow(): BrowserWindow {
 	win.once("ready-to-show", () => {
 		console.log(`[PERF:MAIN] Editor Window: ready-to-show in ${Date.now() - perfStart}ms`);
 		win.show();
-		// On Linux/Wayland the compositor ignores the requested x/y, so the editor can
-		// land partly under reserved areas (panels/bars). Maximizing lets the compositor
-		// fit it to the available work area instead.
+		// Wayland ignores the requested x/y, so the editor can land partly under reserved
+		// areas (panels/bars). Maximize on Linux so the compositor fits it to the work area.
 		if (process.platform === "linux") {
 			win.maximize();
 		}
