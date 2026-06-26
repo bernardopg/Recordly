@@ -301,11 +301,13 @@ function setHudOverlayMousePassthrough(ignore: boolean) {
 	}
 
 	if (!isHudOverlayMousePassthroughSupported()) {
-		// Grow the compact bar into the taller fallback window whenever a control is
-		// interactive (e.g. a popover opens), otherwise popovers (camera, delay, mic,
-		// settings) render outside the small window and get clipped. This now runs on
-		// Linux too — only the window position is ignored on Wayland, not the size.
-		setHudOverlayFallbackExpanded(!ignore);
+		// On Linux the window is expanded explicitly when a popover opens (see the
+		// "hud-overlay-set-popover-open" handler); tying expansion to the hover-driven
+		// `ignore` value here would resize the window on every mouse enter/leave and make
+		// the bar flicker. Other platforms keep the hover-driven expansion.
+		if (process.platform !== "linux") {
+			setHudOverlayFallbackExpanded(!ignore);
+		}
 		hudOverlayWindow.setIgnoreMouseEvents(false);
 		return;
 	}
@@ -331,6 +333,20 @@ ipcMain.on("hud-overlay-set-source-selection-active", (_event, active: boolean) 
 	}
 
 	setHudOverlayMousePassthrough(hudOverlayIgnoringMouse);
+});
+
+// On Linux the compact HUD window is grown only while a popover is open, decoupled from
+// the hover-driven pass-through toggling, so the controls' popovers (camera, delay, mic,
+// settings) have room to render instead of being clipped — without resizing the window on
+// every mouse enter/leave (which caused the bar to flicker).
+ipcMain.on("hud-overlay-set-popover-open", (_event, open: boolean) => {
+	if (process.platform !== "linux") {
+		return;
+	}
+	if (hudOverlayRecordingActive || hudOverlaySourceSelectionActive) {
+		return;
+	}
+	setHudOverlayFallbackExpanded(Boolean(open));
 });
 
 // Keep compatibility with existing drag IPC/state.

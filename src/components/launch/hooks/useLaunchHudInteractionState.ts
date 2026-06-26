@@ -15,6 +15,10 @@ export function useLaunchHudInteractionState({
 	const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 	useEffect(() => {
+		// Tell the main process whether a popover is open so it can grow the (Linux)
+		// compact HUD window to fit it. This is decoupled from the hover-driven
+		// pass-through toggling below so the window only resizes on real popover changes.
+		window.electronAPI?.hudOverlaySetPopoverOpen?.(openId !== null);
 		if (openId !== null) {
 			if (timeoutRef.current) clearTimeout(timeoutRef.current);
 			window.electronAPI?.hudOverlaySetIgnoreMouse?.(false);
