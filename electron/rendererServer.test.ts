@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
-import { ensurePackagedRendererServer } from "./rendererServer";
+import { closePackagedRendererServer, ensurePackagedRendererServer } from "./rendererServer";
 
 describe("ensurePackagedRendererServer", () => {
 	it("falls back to a random port when the stable one is taken", async () => {
@@ -18,6 +18,7 @@ describe("ensurePackagedRendererServer", () => {
 			expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
 			expect(url).not.toBe("http://127.0.0.1:43823");
 		} finally {
+			await closePackagedRendererServer();
 			if (blockerListening) blocker.close();
 		}
 	});

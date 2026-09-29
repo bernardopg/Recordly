@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 
 const MIME_TYPES: Record<string, string> = {
@@ -23,6 +23,7 @@ const MIME_TYPES: Record<string, string> = {
 
 let packagedRendererBaseUrl: string | null = null;
 let packagedRendererServerStartPromise: Promise<string> | null = null;
+let packagedRendererServer: Server | null = null;
 
 function getContentType(filePath: string): string {
 	return MIME_TYPES[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
@@ -144,6 +145,7 @@ export async function ensurePackagedRendererServer(rootDir: string): Promise<str
 				return;
 			}
 
+			packagedRendererServer = server;
 			packagedRendererBaseUrl = `http://127.0.0.1:${address.port}`;
 			resolve(packagedRendererBaseUrl);
 		});
@@ -156,4 +158,14 @@ export async function ensurePackagedRendererServer(rootDir: string): Promise<str
 	} finally {
 		packagedRendererServerStartPromise = null;
 	}
+}
+
+export function closePackagedRendererServer(): Promise<void> {
+	const server = packagedRendererServer;
+	packagedRendererServer = null;
+	packagedRendererBaseUrl = null;
+	if (!server) {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => server.close(() => resolve()));
 }
