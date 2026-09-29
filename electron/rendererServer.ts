@@ -107,6 +107,8 @@ export function getPackagedRendererBaseUrl(): string | null {
 	return packagedRendererBaseUrl;
 }
 
+const STABLE_RENDERER_PORT = 43823;
+
 export async function ensurePackagedRendererServer(rootDir: string): Promise<string> {
 	if (packagedRendererBaseUrl) {
 		return packagedRendererBaseUrl;
@@ -121,11 +123,20 @@ export async function ensurePackagedRendererServer(rootDir: string): Promise<str
 			void servePackagedRendererRequest(rootDir, request, response);
 		});
 
-		server.once("error", (error) => {
+		// localStorage is scoped to the origin, so a random port per launch silently drops
+		// everything the renderer keeps there (folders, names, fonts, presets...). Prefer a
+		// fixed port and only fall back to a random one if it is taken.
+		let triedStablePort = false;
+		server.on("error", (error: NodeJS.ErrnoException) => {
+			if (triedStablePort && error.code === "EADDRINUSE") {
+				triedStablePort = false;
+				server.listen(0, "127.0.0.1");
+				return;
+			}
 			reject(error);
 		});
 
-		server.listen(0, "127.0.0.1", () => {
+		server.once("listening", () => {
 			const address = server.address();
 			if (!address || typeof address === "string") {
 				server.close();
@@ -136,6 +147,8 @@ export async function ensurePackagedRendererServer(rootDir: string): Promise<str
 			packagedRendererBaseUrl = `http://127.0.0.1:${address.port}`;
 			resolve(packagedRendererBaseUrl);
 		});
+		triedStablePort = true;
+		server.listen(STABLE_RENDERER_PORT, "127.0.0.1");
 	});
 
 	try {
