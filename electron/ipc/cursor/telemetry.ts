@@ -20,10 +20,12 @@ import {
 	setCursorCaptureAccumulatedPausedMs,
 	setCursorCaptureInterval,
 	setCursorCapturePauseStartedAtMs,
+	setLinuxCursorScreenPoint,
 	setPendingCursorSamples,
 } from "../state";
 import type { CursorInteractionType, CursorTelemetryPoint, CursorVisualType } from "../types";
 import { getScreen, getTelemetryPathForVideo } from "../utils";
+import { getHyprlandCursorPos, isHyprlandSession } from "./hyprland";
 
 export function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
@@ -295,6 +297,24 @@ export function snapshotCursorTelemetryForPersistence() {
 	]);
 }
 
+// Samples right after the compositor answers, so the point is not one tick stale.
+function sampleHyprlandCursorPoint(onDone: () => void) {
+	getHyprlandCursorPos()
+		.then(({ x, y }) => {
+			// Linux cursor cache is in physical pixels; Hyprland reports logical ones.
+			const scaleFactor = getScreen().getPrimaryDisplay().scaleFactor || 1;
+			setLinuxCursorScreenPoint({
+				x: x * scaleFactor,
+				y: y * scaleFactor,
+				updatedAt: Date.now(),
+			});
+		})
+		.catch(() => {
+			// Keep the previous point; getNormalizedCursorPoint falls back when it goes stale.
+		})
+		.finally(onDone);
+}
+
 export function startCursorSampling() {
 	stopCursorCapture();
 
@@ -306,7 +326,15 @@ export function startCursorSampling() {
 
 	const tick = () => {
 		if (isCursorCaptureActive && !isCursorCapturePaused()) {
-			sampleCursorPoint();
+			if (isHyprlandSession()) {
+				sampleHyprlandCursorPoint(() => {
+					if (isCursorCaptureActive && !isCursorCapturePaused()) {
+						sampleCursorPoint();
+					}
+				});
+			} else {
+				sampleCursorPoint();
+			}
 		}
 
 		const now = Date.now();

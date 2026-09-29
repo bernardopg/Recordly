@@ -17,6 +17,7 @@ import type {
 	UiohookLike,
 	UiohookModuleNamespace,
 } from "../types";
+import { isHyprlandSession, startHyprlandClickCapture } from "./hyprland";
 import {
 	getCursorCaptureElapsedMs,
 	getHookCursorScreenPoint,
@@ -248,6 +249,26 @@ export async function startInteractionCapture() {
 	}
 
 	stopInteractionCapture();
+
+	// uiohook cannot see clicks outside Recordly's windows on Wayland; Hyprland can.
+	// Position comes from the compositor too (see sampleHyprlandCursorPoint), so skip uiohook.
+	if (isHyprlandSession()) {
+		const stopHyprlandCapture = await startHyprlandClickCapture(
+			recordCursorMouseDown,
+			recordCursorMouseUp,
+		).catch((error) => {
+			console.warn("[CursorTelemetry] Hyprland click capture unavailable:", error);
+			return null;
+		});
+		if (stopHyprlandCapture) {
+			if (!isCursorCaptureActive) {
+				stopHyprlandCapture();
+				return;
+			}
+			setInteractionCaptureCleanup(stopHyprlandCapture);
+			return;
+		}
+	}
 
 	try {
 		const hook = loadUiohookModule();
