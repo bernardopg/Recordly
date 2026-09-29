@@ -160,12 +160,13 @@ export async function ensurePackagedRendererServer(rootDir: string): Promise<str
 	}
 }
 
-export function closePackagedRendererServer(): Promise<void> {
+export async function closePackagedRendererServer(): Promise<void> {
+	// Let a pending start finish first, otherwise it would store a server nobody closes.
+	await packagedRendererServerStartPromise?.catch(() => undefined);
 	const server = packagedRendererServer;
 	packagedRendererServer = null;
 	packagedRendererBaseUrl = null;
-	if (!server) {
-		return Promise.resolve();
+	if (server) {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
 	}
-	return new Promise((resolve) => server.close(() => resolve()));
 }
